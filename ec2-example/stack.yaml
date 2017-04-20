@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: EC2 Example
+
+Parameters:
+  InstanceType:
+    Description: Instance Type
+    Type: String
+    Default: t2.nano
+  KeyName:
+    Description: SSH KeyName for remote access
+    Type: AWS::EC2::KeyPair::KeyName
+  SubnetId:
+    Description: VPC SubnetId for deploying instance
+    Type: AWS::EC2::Subnet::Id
+
+Mappings:
+  ImageMap:
+    us-east-1:
+      ImageId: ami-c58c1dd3
+    us-west-2:
+      ImageId: ami-4836a428
+
+Resources:
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [ImageMap, !Ref "AWS::Region", ImageId]
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !ImportValue SG:web-server
+      SubnetId: !Ref SubnetId
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} \
+          --resource MyEC2Instance --region ${AWS::Region}
+
+          /opt/ec2-example/health-check.sh
+
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT5M
+
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            yum:
+              nginx: []
+              curl: []
+          services:
+            sysvinit:
+              nginx:
+                enabled: true
+                ensureRunning: true
+          files:
+            /usr/share/nginx/html/index.html:
+              content: !Sub |
+                Hello World From ${AWS::Region}!
+
+            /opt/ec2-example/health-check.sh:
+              mode: 000555
+              content: !Sub |
+                #!/bin/bash
+
+                # Loop until health is ok
+                while [ 1 ]
+                do
+                  response=$(curl localhost)
+
+                  if [[ $response == *"Hello World"* ]]; then
+                      echo "Server is online"
+
+                      # Signal back to cloudformation and break
+                      /opt/aws/bin/cfn-signal --stack ${AWS::StackName} \
+                      --resource MyEC2Instance --region ${AWS::Region}
+                      break
+                  fi
+                  sleep 5
+                done

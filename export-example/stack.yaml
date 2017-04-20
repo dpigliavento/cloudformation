@@ -1,0 +1,28 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: Export Example
+
+Parameters:
+  VpcId:
+    Description: VPC ID where security group should be created
+    Type: AWS::EC2::VPC::Id
+
+Resources:
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow inbound HTTP traffic
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '80'
+        ToPort: '80'
+        CidrIp: 0.0.0.0/0
+
+# Other stacks can reference this security group using !ImportValue SG:web-server
+Outputs:
+  SGExport:
+    Description: Allow inbound HTTP traffic
+    Value: !Ref InstanceSecurityGroup
+    Export:
+      Name: SG:web-server

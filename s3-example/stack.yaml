@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: S3 Example - Primary Region
+
+Parameters:
+  BucketName:
+    Description: Name of bucket, region will be appended
+    Type: String
+    Default: capital-saratoga-region-aws-user-group
+
+  RemoteRegion:
+    Description: Provide remote region to enable cross-region replication
+    Type: String
+    Default: Disabled
+    AllowedValues:
+      - Disabled
+      - us-west-2
+      - us-east-1
+
+  ReplicationRole:
+    Description: Provide IAM role if you do not want stack to create one
+    Type: String
+    Default: ""
+
+Conditions:
+  ReplicateBucket: !Not [!Equals [ !Ref RemoteRegion, Disabled ]]
+  CreateRole: !And
+    - !Equals [ !Ref ReplicationRole, "" ]
+    - !Condition ReplicateBucket
+
+Resources:
+  MyBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: S3ReplicationRole
+    Properties:
+      BucketName: !Sub ${BucketName}-${AWS::Region}
+      VersioningConfiguration:
+        Status: Enabled
+      ReplicationConfiguration: !If
+          - ReplicateBucket
+          -
+            Rules:
+            - Status: Enabled
+              Prefix: ''
+              Destination:
+                Bucket: !Sub arn:aws:s3:::${BucketName}-${RemoteRegion}
+            Role: !GetAtt S3ReplicationRole.Arn
+          - !Ref "AWS::NoValue"
+
+  S3ReplicationRole:
+    Type: AWS::IAM::Role
+    Condition: CreateRole
+    Properties:
+      RoleName: !Sub s3-replication-${BucketName}
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - s3.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+  S3ReplicationPolicy:
+    Type: AWS::IAM::Policy
+    Condition: CreateRole
+    Properties:
+      PolicyName: !Sub s3-replication-${BucketName}
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Action: "S3:*"
+            Resource:
+              - !Sub arn:aws:s3:::${BucketName}-*
+              - !Sub arn:aws:s3:::${BucketName}-*/*
+      Roles:
+        - !Ref S3ReplicationRole
